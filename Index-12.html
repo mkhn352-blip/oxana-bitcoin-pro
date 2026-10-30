@@ -1,0 +1,315 @@
+
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Oxana Bitcoin Wallet</title>
+<style>
+*{box-sizing:border-box}
+body{
+  margin:0;padding:18px;
+  background:#101827;color:#f4f7fb;
+  font-family:Arial,sans-serif;
+}
+.container{max-width:520px;margin:auto}
+h1{text-align:center;color:#f5a623}
+.subtitle{text-align:center;color:#b9c4d4}
+.card{
+  background:#1d293b;border-radius:15px;
+  padding:16px;margin:13px 0;
+  border:1px solid #344258;
+}
+.label{color:#b9c4d4;font-size:14px}
+.value{font-size:21px;font-weight:bold;margin-top:9px;overflow-wrap:anywhere}
+.small{font-size:13px;color:#b9c4d4;overflow-wrap:anywhere}
+button{
+  border:0;border-radius:10px;padding:12px;
+  background:#f5a623;color:#172033;
+  font-weight:bold;font-size:15px;cursor:pointer;
+}
+button:disabled{opacity:.6}
+.actions{display:flex;gap:10px}
+.actions button{flex:1}
+#qr{text-align:center;margin-top:12px}
+#qr img,#qr canvas{max-width:180px;background:white;padding:8px;border-radius:8px}
+a{color:#f5c66d}
+.status{font-size:14px;color:#c5d0df;line-height:1.8}
+.notice{font-size:12px;color:#f4d7a0;line-height:1.9}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>₿ Oxana Wallet</h1>
+  <div class="subtitle">کیف پول نمایشی بیت‌کوین</div>
+
+  <div class="card">
+    <div class="label">قیمت لحظه‌ای بیت‌کوین (USD)</div>
+    <div class="value" id="price">در حال دریافت...</div>
+    <div class="small" id="priceStatus">در حال اتصال به Coinbase</div>
+  </div>
+
+  <div class="card">
+    <div class="label">موجودی تأییدشده</div>
+    <div class="value" id="balance">در حال دریافت...</div>
+    <div class="small">موجودی عمومی این آدرس روی شبکه اصلی بیت‌کوین</div>
+  </div>
+
+  <div class="card">
+    <div class="label">تغییر خالص در انتظار تأیید</div>
+    <div class="value" id="pending">در حال دریافت...</div>
+  </div>
+
+  <div class="card">
+    <div class="label">آدرس بیت‌کوین</div>
+    <div class="small" id="address"></div>
+    <div class="actions" style="margin-top:12px">
+      <button id="copyBtn">کپی آدرس</button>
+      <button id="explorerBtn">مشاهده آدرس</button>
+    </div>
+    <div id="qr"><span class="small">در حال آماده‌سازی QR</span></div>
+    <div class="small" id="qrStatus"></div>
+  </div>
+
+  <div class="card">
+    <div class="label">ارتفاع آخرین بلاک</div>
+    <div class="value" id="height">در حال دریافت...</div>
+    <div class="label" style="margin-top:16px">تعداد تراکنش‌های آدرس</div>
+    <div class="value" id="txCount">در حال دریافت...</div>
+    <div class="status" id="networkStatus">در حال اتصال به شبکه...</div>
+  </div>
+
+  <div class="card">
+    <div class="label">آخرین تراکنش‌ها</div>
+    <div id="transactions" class="status">در حال دریافت...</div>
+  </div>
+
+  <button id="refreshBtn" style="width:100%">به‌روزرسانی اطلاعات</button>
+  <p class="small" id="updated" style="text-align:center"></p>
+
+  <div class="card notice">
+    هشدار امنیتی: این برنامه فقط اطلاعات عمومی بلاک‌چین را نمایش می‌دهد.
+    کلید خصوصی ندارد و امکان نگهداری یا ارسال بیت‌کوین را فراهم نمی‌کند.
+    آدرس نمایش‌داده‌شده را پیش از هرگونه دریافت وجه، مستقل بررسی کنید.
+  </div>
+</div>
+
+<script>
+"use strict";
+
+const $ = id => document.getElementById(id);
+
+const BTC_ADDRESS =
+  "bc1qqv0auedwt0s5h9ncgfuklgws3ungcyur59u3w8";
+
+const API = "https://blockstream.info/api";
+
+function btc(sats) {
+  return (Number(sats || 0) / 100000000).toFixed(8) + " BTC";
+}
+
+function money(value) {
+  return Number(value).toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 2
+  });
+}
+
+async function getText(url) {
+  const response = await fetch(url, {
+    cache: "no-store"
+  });
+  if (!response.ok) {
+    throw new Error("HTTP " + response.status);
+  }
+  return (await response.text()).trim();
+}
+
+async function getJSON(url) {
+  const response = await fetch(url, {
+    cache: "no-store"
+  });
+  if (!response.ok) {
+    throw new Error("HTTP " + response.status);
+  }
+  return await response.json();
+}
+
+async function loadPrice() {
+  try {
+    const data = await getJSON(
+      "https://api.coinbase.com/v2/prices/BTC-USD/spot"
+    );
+    $("price").textContent = money(data.data.amount);
+    $("priceStatus").textContent = "اتصال موفق";
+  } catch (error) {
+    $("priceStatus").textContent = "قیمت دریافت نشد";
+  }
+}
+
+async function loadNetwork() {
+  $("networkStatus").textContent = "در حال دریافت اطلاعات شبکه...";
+
+  try {
+    const results = await Promise.allSettled([
+      getJSON(API + "/address/" + BTC_ADDRESS),
+      getText(API + "/blocks/tip/height")
+    ]);
+
+    const addressResult = results[0];
+    const heightResult = results[1];
+    let successCount = 0;
+
+    if (addressResult.status === "fulfilled") {
+      const data = addressResult.value;
+      const chain = data.chain_stats;
+      const mempool = data.mempool_stats;
+
+      const confirmed =
+        chain.funded_txo_sum - chain.spent_txo_sum;
+
+      const pending =
+        mempool.funded_txo_sum - mempool.spent_txo_sum;
+
+      $("balance").textContent = btc(confirmed);
+      $("pending").textContent =
+        (pending > 0 ? "+" : "") + btc(pending);
+
+      $("txCount").textContent =
+        Number(chain.tx_count + mempool.tx_count).toLocaleString("en-US");
+
+      successCount++;
+    } else {
+      $("balance").textContent = "دریافت نشد";
+      $("pending").textContent = "دریافت نشد";
+      $("txCount").textContent = "دریافت نشد";
+    }
+
+    if (heightResult.status === "fulfilled") {
+      const height = Number(heightResult.value);
+      $("height").textContent = Number.isFinite(height)
+        ? height.toLocaleString("en-US")
+        : "دریافت نشد";
+      successCount++;
+    } else {
+      $("height").textContent = "دریافت نشد";
+    }
+
+    $("networkStatus").textContent = successCount === 2
+      ? "اتصال موفق به سرویس شبکه"
+      : "فقط بخشی از اطلاعات دریافت شد";
+  } catch (error) {
+    $("balance").textContent = "دریافت نشد";
+    $("pending").textContent = "دریافت نشد";
+    $("height").textContent = "دریافت نشد";
+    $("txCount").textContent = "دریافت نشد";
+    $("networkStatus").textContent =
+      "ارتباط با سرویس شبکه برقرار نشد";
+  }
+}
+
+async function loadTransactions() {
+  const area = $("transactions");
+  area.textContent = "در حال دریافت...";
+
+  try {
+    const txs = await getJSON(
+      API + "/address/" + BTC_ADDRESS + "/txs"
+    );
+
+    if (!txs.length) {
+      area.textContent = "تراکنشی برای این آدرس پیدا نشد.";
+      return;
+    }
+
+    area.replaceChildren();
+
+    txs.slice(0, 5).forEach(tx => {
+      const item = document.createElement("div");
+      item.style.marginBottom = "14px";
+
+      const link = document.createElement("a");
+      link.href = "https://blockstream.info/tx/" + tx.txid;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = tx.txid.slice(0, 18) + "...";
+
+      const detail = document.createElement("div");
+      detail.className = "small";
+      detail.textContent = tx.status.confirmed
+        ? "تأیید شده"
+        : "در انتظار تأیید";
+
+      item.append(link, detail);
+      area.appendChild(item);
+    });
+  } catch (error) {
+    area.textContent = "تراکنش‌ها دریافت نشدند.";
+  }
+}
+
+function renderQR() {
+  $("address").textContent = BTC_ADDRESS;
+
+  if (window.QRCode) {
+    $("qr").replaceChildren();
+    new QRCode($("qr"), {
+      text: BTC_ADDRESS,
+      width: 180,
+      height: 180
+    });
+    $("qrStatus").textContent = "";
+  } else {
+    $("qr").textContent = "QR در دسترس نیست";
+    $("qrStatus").textContent =
+      "برای نمایش QR اتصال به کتابخانه لازم است.";
+  }
+}
+
+async function refreshAll() {
+  $("refreshBtn").disabled = true;
+  $("refreshBtn").textContent = "در حال به‌روزرسانی...";
+
+  await Promise.all([
+    loadPrice(),
+    loadNetwork(),
+    loadTransactions()
+  ]);
+
+  $("updated").textContent =
+    "آخرین بررسی: " + new Date().toLocaleTimeString();
+
+  $("refreshBtn").disabled = false;
+  $("refreshBtn").textContent = "به‌روزرسانی اطلاعات";
+}
+
+$("copyBtn").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(BTC_ADDRESS);
+    $("copyBtn").textContent = "کپی شد";
+  } catch (error) {
+    $("copyBtn").textContent = "کپی نشد";
+  }
+});
+
+$("explorerBtn").addEventListener("click", () => {
+  window.open(
+    "https://blockstream.info/address/" + BTC_ADDRESS,
+    "_blank",
+    "noopener"
+  );
+});
+
+$("refreshBtn").addEventListener("click", refreshAll);
+
+renderQR();
+refreshAll();
+</script>
+
+<script
+  src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"
+  onload="renderQR()">
+</script>
+</body>
+</html>
